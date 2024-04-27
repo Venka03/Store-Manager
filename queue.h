@@ -12,7 +12,10 @@ struct element {
 
 typedef struct queue {
   // Define the struct yourself
-  int param1;
+  int max_size, size;
+  struct element *array;
+  int head;
+  int tail;
 }queue;
 
 queue* queue_init (int size);
