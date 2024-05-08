@@ -30,7 +30,7 @@ int queue_put(queue *q, struct element* x)
     exit(-1);
   }
   else {
-    q->tail++;
+    q->tail = (q->tail + 1) % q->max_size;
     q->array[q->tail] = *x;
     q->size++;
   }
@@ -42,7 +42,7 @@ struct element* queue_get(queue *q)
 {
   struct element* element = (struct element *)malloc(sizeof(struct element)); // should be like this to avoid problem
   *element = q->array[q->head];
-  q->head++; // move to next
+  q->head = (q->head + 1) % q->max_size; // move to next
   q->size--;
   return element;
 }

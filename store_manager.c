@@ -11,6 +11,86 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <semaphore.h>
+
+
+/*
+struct element {
+  int product_id; //Product identifier
+  int op;         //Operation
+  int units;      //Product units
+};
+typedef struct queue {
+  // Define the struct yourself
+  int max_size, size;
+  struct element *array;
+  int head;
+  int tail;
+}queue;
+
+// queue.c
+queue* queue_init(int size)
+{
+  //queue * q = (queue *)malloc(size * sizeof(struct element));
+  queue * q = (queue *)malloc(sizeof(queue));
+  q->array = (struct element *)malloc(sizeof(struct element)*size);
+  q->max_size = size;
+  return q;
+}
+int queue_put(queue *q, struct element* x)
+{
+  if (q->size == 0){
+    q->head = 0;
+    q->tail = 0;
+    q->array[q->head] = *x;
+    q->size++;
+  }
+  else if(q->size == q->max_size){
+    perror("ERROR: queue is full");
+    exit(-1);
+  }
+  else {
+    q->tail = (q->tail + 1) % q->max_size;
+    q->array[q->tail] = *x;
+    q->size++;
+  }
+  return 0;
+}
+struct element* queue_get(queue *q)
+{
+  struct element* element = (struct element *)malloc(sizeof(struct element)); // should be like this to avoid problem
+  *element = q->array[q->head];
+  q->head = (q->head + 1) % q->max_size; // move to next
+  q->size--;
+  return element;
+}
+int queue_empty(queue *q) {
+  if (q->size == 0)
+    return 1;
+  return 0;
+}
+int queue_full(queue *q) {
+  if (q->size == q->max_size)
+    return 1;
+  return 0;
+}
+int queue_destroy(queue *q)
+{
+  return 0;
+}
+*/
+
+
+
+struct element *elements;
+queue *q;
+int DATA_TO_READ;
+sem_t hollow;
+sem_t elem;
+
+
+
+
 
 
 struct element* save_data(char name[]){
@@ -35,9 +115,9 @@ struct element* save_data(char name[]){
     }
   }
   int size = atoi(buffer);
+  DATA_TO_READ = size;
   printf("%d\n", size);
   struct element *elements = (struct element *)malloc(sizeof(struct element)*size); // used to store operations(?)
-  int num_elem = 0;
   int j = 0;
   i = 0;
   int word = 0;
@@ -60,28 +140,165 @@ struct element* save_data(char name[]){
   }
   return elements;
 }
+void* add_to_queue(){
+    int i=0;
+    while (i < DATA_TO_READ){
+        sem_wait(&hollow);
+        if (!queue_full(q)){
+            queue_put(q, elements+i);
+            i++;
+        }
+        sem_post(&elem);
+    }
+    pthread_exit(0);
+}
+void* take_from_queue(void* profit){
+    struct element* el;
+    int i=0;
+    while (i < DATA_TO_READ){
+        sem_wait(&elem);
+        if (!queue_empty(q)){
+            i++;
+            el = queue_get(q);
+            printf("%d, %d, %d\n", el->product_id, el->op, el->units);
+            int money;
+            if (el->op == 0){
+                switch (el->product_id)
+                {
+                case 1:
+                    money = el->units * 3;
+                    break;
+                case 2:
+                    money = el->units * 10;
+                    break;
+                case 3:
+                    money = el->units * 20;
+                    break;
+                case 4:
+                    money = el->units * 40;
+                    break;
+                case 5:
+                    money = el->units * 125;
+                    break;
+                default:
+                    break;
+                }
+                (*(int *)profit) += money;
+            }
+            else {
+                switch (el->product_id)
+                {
+                case 1:
+                    money = el->units * 2;
+                    break;
+                case 2:
+                    money = el->units * 5;
+                    break;
+                case 3:
+                    money = el->units * 15;
+                    break;
+                case 4:
+                    money = el->units * 25;
+                    break;
+                case 5:
+                    money = el->units * 100;
+                    break;
+                default:
+                    break;
+                }
+                (*(int *)profit) -= money;
+            }
+        }
+        sem_post(&hollow);
+    }
+    /*
+    for (int i=0; i<50; i++){
+        sem_wait(&elem);
+        el = queue_get(q);
+        printf("%d, %d, %d\n", el->product_id, el->op, el->units);
+        int money;
+        if (el->op == 0){
+        switch (el->product_id)
+        {
+        case 1:
+            money = el->units * 3;
+            break;
+        case 2:
+            money = el->units * 10;
+            break;
+        case 3:
+            money = el->units * 20;
+            break;
+        case 4:
+            money = el->units * 40;
+            break;
+        case 5:
+            money = el->units * 125;
+            break;
+        default:
+            break;
+        }
+        (*(int *)profit) += money;
+        }
+        else {
+        switch (el->product_id)
+        {
+        case 1:
+            money = el->units * 2;
+            break;
+        case 2:
+            money = el->units * 5;
+            break;
+        case 3:
+            money = el->units * 15;
+            break;
+        case 4:
+            money = el->units * 25;
+            break;
+        case 5:
+            money = el->units * 100;
+            break;
+        default:
+            break;
+        }
+        (*(int *)profit) -= money;
+        }
+        sem_post(&hollow);
+    }
+    */
+    pthread_exit(0);
 
+}
 
 int main (int argc, const char * argv[]){
-
+  
   int profits = 0;
   int product_stock [5] = {0};
+
+  sem_init(&elem, 0, 0);
+  sem_init(&hollow, 0, DATA_TO_READ);
   
-  struct element *elements = save_data("file.txt");
-  
+  // struct element *elements = save_data("file.txt");
+  elements = save_data("file.txt");
+  pthread_t write, read;
+  q = queue_init(10);
+  pthread_create(&write, NULL, add_to_queue, NULL);
+  pthread_create(&read, NULL, take_from_queue, (void *)&profits);
+  pthread_join(write, NULL);
+  pthread_join(read, NULL);
+  sem_destroy(&hollow);
+  sem_destroy(&elem);
 
 
 
-
-
-    // Output
-    printf("Total: %d euros\n", profits);
-    printf("Stock:\n");
-    printf("  Product 1: %d\n", product_stock[0]);
-    printf("  Product 2: %d\n", product_stock[1]);
-    printf("  Product 3: %d\n", product_stock[2]);
-    printf("  Product 4: %d\n", product_stock[3]);
-    printf("  Product 5: %d\n", product_stock[4]);
+  // Output
+  printf("Total: %d euros\n", profits);
+  printf("Stock:\n");
+  printf("  Product 1: %d\n", product_stock[0]);
+  printf("  Product 2: %d\n", product_stock[1]);
+  printf("  Product 3: %d\n", product_stock[2]);
+  printf("  Product 4: %d\n", product_stock[3]);
+  printf("  Product 5: %d\n", product_stock[4]);
 
   return 0;
 }
