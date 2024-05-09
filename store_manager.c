@@ -161,17 +161,25 @@ void* producer(void* arg){
     pthread_exit(0);
 }
 
+int elements_read = 0;
+
 void* consumer(void* profit){
     struct element* el;
-    int i=0;
+    //int i=0;
     //int* arr = (int *)profit;
-    while (i < DATA_TO_READ){
+    while (1){
         pthread_mutex_lock(&read_mutex); /* access to buffer */
+        if (elements_read >= DATA_TO_READ){
+            pthread_mutex_unlock(&read_mutex); // so another thread can finish its execution
+            break;
+        }
         while (queue_empty(q))
             pthread_cond_wait(&non_empty, &read_mutex);
         
-        i++;
+        //i++;
+        elements_read++;
         el = queue_get(q);
+        //pthread_mutex_unlock(&read_mutex);
         printf("%d, %d, %d\n", el->product_id, el->op, el->units);
         int money = 0;
         if (el->op == 0){
@@ -246,7 +254,7 @@ int main (int argc, const char * argv[]){
     pthread_cond_init(&non_empty, NULL);
 
     int amount = 3;
-    pthread_t write[amount], read;
+    pthread_t write[amount], read[amount];
     for (int i=0; i<amount; i++){
         struct ThreadArgs* args = malloc(sizeof(struct ThreadArgs));
         args->begin = i*(DATA_TO_READ/amount);
@@ -256,10 +264,12 @@ int main (int argc, const char * argv[]){
         pthread_create(&write[i], NULL, producer, (void*)args);
     }
 
-    pthread_create(&read, NULL, consumer, (void *)&profits);
+    for (int i=0; i<amount; i++)
+        pthread_create(&read[i], NULL, consumer, (void *)&profits);
     for (int i=0; i<amount; i++)
         pthread_join(write[i], NULL);
-    pthread_join(read, NULL);
+    for (int i=0; i<amount; i++)
+        pthread_join(read[i], NULL);
 
     pthread_mutex_destroy(&read_mutex);
     pthread_mutex_destroy(&write_mutex);
