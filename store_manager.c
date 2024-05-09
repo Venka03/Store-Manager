@@ -85,17 +85,15 @@ int queue_destroy(queue *q)
 struct element *elements;
 queue *q;
 int DATA_TO_READ;
-pthread_mutex_t write_mutex; /* Control access to writing data*/
-pthread_mutex_t read_mutex; /* Control access to reading data*/
+pthread_mutex_t write_mutex; /* mutex to access shared buffer */
+pthread_mutex_t read_mutex;
 pthread_cond_t non_full; /* can we add more elements? */
 pthread_cond_t non_empty; /* can we remove elements? */
 
-
 struct ThreadArgs {
-    int begin;
-    int end;
+    int* arg1;
+    int* arg2;
 };
-
 
 
 struct element* save_data(char name[]){
@@ -115,13 +113,11 @@ struct element* save_data(char name[]){
     i++;
     if (buffer[i-1] == '\n'){
       buffer[i-1] = '\0';
-      printf("Line read: %s\n", buffer);
       break;
     }
   }
   int size = atoi(buffer);
   DATA_TO_READ = size;
-  printf("%d\n", size);
   struct element *elements = (struct element *)malloc(sizeof(struct element)*size); // used to store operations(?)
   int j = 0;
   i = 0;
@@ -147,23 +143,29 @@ struct element* save_data(char name[]){
 }
 void* producer(void* arg){
     struct ThreadArgs* args = (struct ThreadArgs*) arg;
-    int i=args->begin;
-    while (i < args->end){
+    int i=*(args->arg1);
+    while (i < *args->arg2){
         pthread_mutex_lock(&write_mutex);
-        while (queue_full(q))
+        while (queue_full(q)){
             pthread_cond_wait(&non_full, &write_mutex);
+        }
         
         queue_put(q, elements+i);
         i++;
+        
         pthread_cond_signal(&non_empty); /* buffer is not empty */
+        
+        //pthread_mutex_lock(&read_mutex);
         pthread_mutex_unlock(&write_mutex);
+        //pthread_mutex_unlock(&read_mutex);   
     }
     pthread_exit(0);
 }
 
 int elements_read = 0;
 
-void* consumer(void* profit){
+void* consumer(void* arg){
+    struct ThreadArgs* args = (struct ThreadArgs*) arg;
     struct element* el;
     //int i=0;
     //int* arr = (int *)profit;
@@ -171,23 +173,25 @@ void* consumer(void* profit){
         pthread_mutex_lock(&read_mutex); /* access to buffer */
         if (elements_read >= DATA_TO_READ){
             pthread_mutex_unlock(&read_mutex); // so another thread can finish its execution
+            //pthread_cond_broadcast(&non_empty);
             break;
         }
-        while (queue_empty(q))
+        
+        while (queue_empty(q)){
             pthread_cond_wait(&non_empty, &read_mutex);
+        }
+            
         
         //i++;
         elements_read++;
         el = queue_get(q);
         //pthread_mutex_unlock(&read_mutex);
-        printf("%d, %d, %d\n", el->product_id, el->op, el->units);
         int money = 0;
         if (el->op == 0){
             switch (el->product_id)
             {
             case 1:
                 money = el->units * 3;
-                *((int *)profit + el->op) += money;
                 break;
             case 2:
                 money = el->units * 10;
@@ -202,9 +206,11 @@ void* consumer(void* profit){
                 money = el->units * 125;
                 break;
             }
+            args->arg1[el->product_id-1] -= el->units;
             //arr[el->product_id-1] += money;
             //*((int *)profit + el->product_id-1) += money;
-            (*(int *)profit) += money;
+            *args->arg2 += money;
+            //(*(int *)profit) += money;
         }
         else {
             switch (el->product_id)
@@ -225,55 +231,82 @@ void* consumer(void* profit){
                 money = el->units * 100;
                 break;
             }
-            (*(int *)profit) -= money;
+            args->arg1[el->product_id-1] += el->units;
+            *args->arg2 -= money;
+            //(*(int *)profit) -= money;
             //*((int *)profit + el->product_id-1) -= money;
             //arr[el->product_id-1] -= money;
         }
         
+        
         pthread_mutex_unlock(&read_mutex);
+
         pthread_mutex_lock(&write_mutex);
         pthread_cond_signal(&non_full); /* buffer is not full */
         pthread_mutex_unlock(&write_mutex);
+        
+        
     }
     pthread_exit(0);
 
 }
 
-int main (int argc, const char * argv[]){
+int main (int argc, char * argv[]){
     int profits = 0;
     int product_stock [5] = {0};
-
     // struct element *elements = save_data("file.txt");
+    int q_length = 10, amount_p = 3, amount_c = 3;
 
-    elements = save_data("file.txt");
-    q = queue_init(10);
+    if (argc == 5){
+        elements = save_data(argv[1]);
+        amount_p = atoi(argv[2]);
+        amount_c = atoi(argv[3]);
+        q_length = atoi(argv[4]);
+    }
+    else {
+        perror("ERROR: wrong input data");
+        return -1;
+    }
+    q = queue_init(q_length);
 
     pthread_mutex_init(&write_mutex, NULL);
     pthread_mutex_init(&read_mutex, NULL);
     pthread_cond_init(&non_full, NULL);
     pthread_cond_init(&non_empty, NULL);
 
-    int amount = 3;
-    pthread_t write[amount], read[amount];
-    for (int i=0; i<amount; i++){
+    pthread_t write[amount_p], read[amount_c];
+    for (int i=0; i<amount_p; i++){
         struct ThreadArgs* args = malloc(sizeof(struct ThreadArgs));
-        args->begin = i*(DATA_TO_READ/amount);
-        args->end = (i+1)*(DATA_TO_READ/amount);
-        if (i == amount-1)
-            args->end = DATA_TO_READ;
+        args->arg1 = malloc(sizeof(int));
+        *args->arg1 = i*(DATA_TO_READ/amount_p);
+        args->arg2 = malloc(sizeof(int));
+        *args->arg2 = (i+1)*(DATA_TO_READ/amount_p);
+        if (i == amount_p-1)
+            args->arg2 = &DATA_TO_READ;
         pthread_create(&write[i], NULL, producer, (void*)args);
     }
+    //struct ThreadArgs args = {0, DATA_TO_READ};
+    //pthread_create(&write, NULL, producer, (void*)&args);
+    for (int i=0; i<amount_c; i++){
+        struct ThreadArgs* args = malloc(sizeof(struct ThreadArgs));
+        args->arg1 = malloc(5 * sizeof(int));
+        args->arg1 = product_stock;
+        args->arg2 = &profits;
+        pthread_create(&read[i], NULL, consumer, (void*)args);
+    }
 
-    for (int i=0; i<amount; i++)
-        pthread_create(&read[i], NULL, consumer, (void *)&profits);
-    for (int i=0; i<amount; i++)
+        
+    for (int i=0; i<amount_c; i++)
         pthread_join(write[i], NULL);
-    for (int i=0; i<amount; i++)
+    
+    for (int i=0; i<amount_c; i++)
         pthread_join(read[i], NULL);
+    
+    //pthread_join(read, NULL);
 
     pthread_mutex_destroy(&read_mutex);
     pthread_mutex_destroy(&write_mutex);
-    pthread_cond_destroy(&non_full); 
+    pthread_cond_destroy(&non_full);
     pthread_cond_destroy(&non_empty);
 
     // Output
