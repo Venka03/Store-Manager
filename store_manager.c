@@ -85,7 +85,8 @@ int queue_destroy(queue *q)
 struct element *elements;
 queue *q;
 int DATA_TO_READ;
-pthread_mutex_t mutex; /* mutex to access shared buffer */
+pthread_mutex_t write_mutex; /* Control access to writing data*/
+pthread_mutex_t read_mutex; /* Control access to reading data*/
 pthread_cond_t non_full; /* can we add more elements? */
 pthread_cond_t non_empty; /* can we remove elements? */
 
@@ -141,29 +142,29 @@ struct element* save_data(char name[]){
   }
   return elements;
 }
-void* add_to_queue(){
+void* producer(){
     int i=0;
     while (i < DATA_TO_READ){
-        pthread_mutex_lock(&mutex);
+        pthread_mutex_lock(&write_mutex);
         while (queue_full(q))
-            pthread_cond_wait(&non_full, &mutex);
+            pthread_cond_wait(&non_full, &write_mutex);
         
         queue_put(q, elements+i);
         i++;
         pthread_cond_signal(&non_empty); /* buffer is not empty */
-        pthread_mutex_unlock(&mutex);
+        pthread_mutex_unlock(&write_mutex);
     }
     pthread_exit(0);
 }
 
-void* take_from_queue(void* profit){
+void* consumer(void* profit){
     struct element* el;
     int i=0;
     //int* arr = (int *)profit;
     while (i < DATA_TO_READ){
-        pthread_mutex_lock(&mutex); /* access to buffer */
+        pthread_mutex_lock(&read_mutex); /* access to buffer */
         while (queue_empty(q))
-            pthread_cond_wait(&non_empty, &mutex);
+            pthread_cond_wait(&non_empty, &read_mutex);
         
         i++;
         el = queue_get(q);
@@ -216,64 +217,12 @@ void* take_from_queue(void* profit){
             //*((int *)profit + el->product_id-1) -= money;
             //arr[el->product_id-1] -= money;
         }
+        
+        pthread_mutex_unlock(&read_mutex);
+        pthread_mutex_lock(&write_mutex);
         pthread_cond_signal(&non_full); /* buffer is not full */
-        pthread_mutex_unlock(&mutex);
+        pthread_mutex_unlock(&write_mutex);
     }
-    /*
-    for (int i=0; i<50; i++){
-        sem_wait(&elem);
-        el = queue_get(q);
-        printf("%d, %d, %d\n", el->product_id, el->op, el->units);
-        int money;
-        if (el->op == 0){
-        switch (el->product_id)
-        {
-        case 1:
-            money = el->units * 3;
-            break;
-        case 2:
-            money = el->units * 10;
-            break;
-        case 3:
-            money = el->units * 20;
-            break;
-        case 4:
-            money = el->units * 40;
-            break;
-        case 5:
-            money = el->units * 125;
-            break;
-        default:
-            break;
-        }
-        (*(int *)profit) += money;
-        }
-        else {
-        switch (el->product_id)
-        {
-        case 1:
-            money = el->units * 2;
-            break;
-        case 2:
-            money = el->units * 5;
-            break;
-        case 3:
-            money = el->units * 15;
-            break;
-        case 4:
-            money = el->units * 25;
-            break;
-        case 5:
-            money = el->units * 100;
-            break;
-        default:
-            break;
-        }
-        (*(int *)profit) -= money;
-        }
-        sem_post(&hollow);
-    }
-    */
     pthread_exit(0);
 
 }
@@ -287,17 +236,19 @@ int main (int argc, const char * argv[]){
     elements = save_data("file.txt");
     q = queue_init(10);
 
-    pthread_mutex_init(&mutex, NULL);
+    pthread_mutex_init(&write_mutex, NULL);
+    pthread_mutex_init(&read_mutex, NULL);
     pthread_cond_init(&non_full, NULL);
     pthread_cond_init(&non_empty, NULL);
 
     pthread_t write, read;
-    pthread_create(&write, NULL, add_to_queue, NULL);
-    pthread_create(&read, NULL, take_from_queue, (void *)&profits);
+    pthread_create(&write, NULL, producer, NULL);
+    pthread_create(&read, NULL, consumer, (void *)&profits);
     pthread_join(write, NULL);
     pthread_join(read, NULL);
 
-    pthread_mutex_destroy(&mutex);
+    pthread_mutex_destroy(&read_mutex);
+    pthread_mutex_destroy(&write_mutex);
     pthread_cond_destroy(&non_full);
     pthread_cond_destroy(&non_empty);
 
