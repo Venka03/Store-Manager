@@ -91,7 +91,10 @@ pthread_cond_t non_full; /* can we add more elements? */
 pthread_cond_t non_empty; /* can we remove elements? */
 
 
-
+struct ThreadArgs {
+    int begin;
+    int end;
+};
 
 
 
@@ -142,9 +145,10 @@ struct element* save_data(char name[]){
   }
   return elements;
 }
-void* producer(){
-    int i=0;
-    while (i < DATA_TO_READ){
+void* producer(void* arg){
+    struct ThreadArgs* args = (struct ThreadArgs*) arg;
+    int i=args->begin;
+    while (i < args->end){
         pthread_mutex_lock(&write_mutex);
         while (queue_full(q))
             pthread_cond_wait(&non_full, &write_mutex);
@@ -241,15 +245,25 @@ int main (int argc, const char * argv[]){
     pthread_cond_init(&non_full, NULL);
     pthread_cond_init(&non_empty, NULL);
 
-    pthread_t write, read;
-    pthread_create(&write, NULL, producer, NULL);
+    int amount = 3;
+    pthread_t write[amount], read;
+    for (int i=0; i<amount; i++){
+        struct ThreadArgs* args = malloc(sizeof(struct ThreadArgs));
+        args->begin = i*(DATA_TO_READ/amount);
+        args->end = (i+1)*(DATA_TO_READ/amount);
+        if (i == amount-1)
+            args->end = DATA_TO_READ;
+        pthread_create(&write[i], NULL, producer, (void*)args);
+    }
+
     pthread_create(&read, NULL, consumer, (void *)&profits);
-    pthread_join(write, NULL);
+    for (int i=0; i<amount; i++)
+        pthread_join(write[i], NULL);
     pthread_join(read, NULL);
 
     pthread_mutex_destroy(&read_mutex);
     pthread_mutex_destroy(&write_mutex);
-    pthread_cond_destroy(&non_full);
+    pthread_cond_destroy(&non_full); 
     pthread_cond_destroy(&non_empty);
 
     // Output
