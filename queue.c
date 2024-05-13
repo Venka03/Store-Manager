@@ -9,84 +9,60 @@
 //To create a queue
 queue* queue_init(int size)
 {
-  //queue * q = (queue *)malloc(size * sizeof(struct element));
-  queue * q = (queue *)malloc(sizeof(queue));
-  q->array = (struct element *)malloc(sizeof(struct element)*size);
+  queue * q = (queue *)malloc(sizeof(queue)); // allocate space for object queue
+  q->array = (struct operation *)malloc(sizeof(struct operation)*size); // allocate space for array that will be used as queue
   q->max_size = size;
   return q;
 }
 
 // To Enqueue an element
-int queue_put(queue *q, struct element* x)
+int queue_put(queue *q, struct operation* x)
 {
-  if (q->size == 0){
+  if (q->size == 0){ // check if queue is empty, thus setting head and tail and adding element
     q->head = 0;
     q->tail = 0;
-    q->array[q->head] = *x;
+    q->array[q->tail] = *x; // assign to tail position the element
     q->size++;
   }
-  else if(q->size == q->max_size){
+  else if(q->size == q->max_size){ // in case when queue is already full
     perror("ERROR: queue is full");
     exit(-1);
   }
   else {
-    q->tail = (q->tail + 1) % q->max_size;
-    q->array[q->tail] = *x;
+    q->tail = (q->tail + 1) % q->max_size; // queue is circular array
+    q->array[q->tail] = *x; // assign to the new tail position the element
     q->size++;
   }
   return 0;
 }
 
 // To Dequeue an element.
-struct element* queue_get(queue *q)
+struct operation* queue_get(queue *q)
 {
-  struct element* element = (struct element *)malloc(sizeof(struct element)); // should be like this to avoid problem
+  if (q->size == 0){
+    perror("ERROR: queue is empty");
+    exit(-1);
+  }
+  struct operation* element = (struct operation *)malloc(sizeof(struct operation)); // allocate space for return object
   *element = q->array[q->head];
   q->head = (q->head + 1) % q->max_size; // move to next
   q->size--;
   return element;
 }
 
-//To check queue state
-int queue_empty(queue *q) {
-  if (q->size == 0)
-    return 1;
-  return 0;
+//To check if queue is empty
+int queue_empty(queue *q){
+  return q->size == 0;
 }
-
+//To check if queue is full
 int queue_full(queue *q) {
-  if (q->size == q->max_size)
-    return 1;
-  return 0;
+  return q->size == q->max_size;
 }
 
-//To destroy the queue and free the resources
+//destroy the queue and free the resources
 int queue_destroy(queue *q)
 {
-  return 0;
-}
-
-
-int main(){
-  queue * q = queue_init(5);
-  struct element elem;
-  elem.product_id = 1;
-  elem.op = 2;
-  elem.units = 4;
-  queue_put(q, &elem);
-
-  elem.product_id = 4;
-  elem.op = 4;
-  elem.units = 4;
-  queue_put(q, &elem);
-
-  elem.product_id = 5;
-  elem.op = 5;
-  elem.units = 5;
-  queue_put(q, &elem);
-
-  struct element *elem1 =  queue_get(q);
-
-  printf("%d %d %d\n", elem1->product_id, elem1->op, elem1->units);
+  free(q->array);
+  free(q);
   return 0;
 }
